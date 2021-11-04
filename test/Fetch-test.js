@@ -23,6 +23,7 @@ const TOKEN = artifacts.require('./TOKEN.sol')
 const Stake = artifacts.require('./Stake.sol')
 const Fetch = artifacts.require('./Fetch.sol')
 const NFT = artifacts.require('./NFT.sol')
+const Sale = artifacts.require('./Sale.sol')
 
 const url = "https://gateway.pinata.cloud/ipfs/QmNVZdcfwaadBzKkDFfGXtqNdKwEbMsQY5xZJxfSxNcK2i/1/"
 const nftType = ".json"
@@ -41,7 +42,8 @@ let pancakeFactory,
     stake,
     stakeSecond,
     fetch,
-    nft
+    nft,
+    sale
 
 
 contract('Fetch-test', function([userOne, userTwo, userThree]) {
@@ -99,12 +101,19 @@ contract('Fetch-test', function([userOne, userTwo, userThree]) {
       userOne
     )
 
+    sale = await Sale.new(
+      token.address,
+      userOne,
+      pancakeRouter.address
+    )
+
     fetch = await Fetch.new(
       weth.address,
       pancakeRouter.address,
       stake.address,
       token.address,
-      pair.address
+      pair.address,
+      sale.address
     )
 
     // exclude stake from fee and balance limit
@@ -115,11 +124,22 @@ contract('Fetch-test', function([userOne, userTwo, userThree]) {
     await token.excludeFromFee(fetch.address)
     await token.excludeFromTransferLimit(fetch.address)
 
+    // exclude sale from fee and balance limit
+    await token.excludeFromFee(sale.address)
+    await token.excludeFromTransferLimit(sale.address)
+
     // send all remains to claim stake
-    const stakeRewards = await token.balanceOf(userOne)
+    const safeMoonRemains = await token.balanceOf(userOne)
+    const halfOfRemains = BigNumber(safeMoonRemains).dividedBy(2)
+    const stakeRewards = halfOfRemains
+    const saleAmount = halfOfRemains
+
     token.transfer(stake.address, stakeRewards)
     stake.setRewardsDistribution(userOne)
     stake.notifyRewardAmount(stakeRewards)
+
+    // sell
+    await token.transfer(sale.address, saleAmount)
 
     // activate burn
     await fetch.updateBurnStatus(true)

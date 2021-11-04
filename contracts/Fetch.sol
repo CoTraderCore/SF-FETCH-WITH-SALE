@@ -3,6 +3,8 @@ pragma solidity ^0.6.2;
 import "./interfaces/IUniswapV2Router02.sol";
 import "./interfaces/IWETH.sol";
 import "./interfaces/IStake.sol";
+import "./interfaces/ISale.sol";
+
 import "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import "@openzeppelin/contracts/math/SafeMath.sol";
 import "@openzeppelin/contracts/token/ERC20/SafeERC20.sol";
@@ -15,11 +17,15 @@ contract Fetch is Ownable {
   using SafeMath for uint256;
   address public WETH;
   address public dexRouter;
+  address public tokenSale;
 
   address public stakeAddress;
 
   address public token;
   address public dexPair;
+
+  uint256 public dexSplit = 80;
+  uint256 public saleSplit = 20;
 
   uint256 public burnPercent = 10;
 
@@ -30,16 +36,18 @@ contract Fetch is Ownable {
   *
   * @param _WETH                  address of Wrapped Ethereum token
   * @param _dexRouter             address of Corader DEX
-  * @param _stakeAddress        address of claim able stake
+  * @param _stakeAddress          address of claim able stake
   * @param _token                 address of token token
   * @param _dexPair               address of pool pair
+  * @param _tokenSale             address of sale
   */
   constructor(
     address _WETH,
     address _dexRouter,
     address _stakeAddress,
     address _token,
-    address _dexPair
+    address _dexPair,
+    address _tokenSale
     )
     public
   {
@@ -48,6 +56,7 @@ contract Fetch is Ownable {
     stakeAddress = _stakeAddress;
     token = _token;
     dexPair = _dexPair;
+    tokenSale = _tokenSale;
   }
 
   // deposit only ETH
@@ -143,13 +152,21 @@ contract Fetch is Ownable {
  }
 
  /**
- * @dev swap ETH to token via DEX
+ * @dev swap ETH to token via DEX and Sale
  */
  function swapETHInput(uint256 input) internal {
-   // determining the portion of the incoming ETH to be converted to the ERC20 Token
-   uint256 conversionPortion = input.mul(505).div(1000);
+  // determining the portion of the incoming ETH to be converted to the ERC20 Token
+  uint256 conversionPortion = input.mul(505).div(1000);
 
-   swapETHViaDEX(dexRouter, conversionPortion);
+  (uint256 ethTodex,
+   uint256 ethToSale) = calculateToSplit(conversionPortion);
+
+  // SPLIT SALE with dex and Sale
+  if(ethTodex > 0)
+    swapETHViaDEX(dexRouter, ethTodex);
+
+  if(ethToSale > 0)
+    ISale(tokenSale).buy.value(ethToSale)();
  }
 
  // helper for swap via dex
@@ -165,6 +182,35 @@ contract Fetch is Ownable {
      address(this),
      now + 1800
    );
+ }
+
+ /**
+ * @dev return split % amount of input
+ */
+ function calculateToSplit(uint256 ethInput)
+   public
+   view
+   returns(uint256 ethTodex, uint256 ethToSale)
+ {
+   ethTodex = ethInput.div(100).mul(dexSplit);
+   ethToSale = ethInput.div(100).mul(saleSplit);
+ }
+
+ /**
+ * @dev allow owner set new split
+ */
+ function updateSplit(
+   uint256 _dexSplit,
+   uint256 _saleSplit
+ )
+   external
+   onlyOwner
+ {
+   uint256 totalPercentage = _dexSplit + _saleSplit;
+   require(totalPercentage == 100, "wrong total split");
+
+   dexSplit = _dexSplit;
+   saleSplit = _saleSplit;
  }
 
  /**
